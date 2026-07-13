@@ -1,7 +1,7 @@
 {
   "name": "crowdos",
   "version": "1.0.0",
-  "description": "**GenAI-enabled Stadium Management & Fan Engagement Platform** *FIFA World Cup 2026 \u00b7 Titan Stadium*",
+  "description": "**GenAI-enabled Stadium Management & Fan Engagement Platform** *FIFA World Cup 2026 · Titan Stadium*",
   "main": "index.js",
   "scripts": {
     "test": "vitest run",
@@ -13,6 +13,7 @@
   "license": "ISC",
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",
+    "@vitest/coverage-v8": "^4.1.10",
     "autoprefixer": "^10.5.2",
     "dompurify": "^3.4.12",
     "jsdom": "^29.1.1",

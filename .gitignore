@@ -1,0 +1,9 @@
+node_modules/
+.vite/
+coverage/
+__pycache__/
+*.pyc
+.coverage
+backend/crowdos.db
+.DS_Store
+.env

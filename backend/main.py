@@ -15,7 +15,6 @@ Architecture:
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import re
@@ -24,12 +23,20 @@ from datetime import datetime
 from enum import Enum
 from typing import Annotated, Any
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import redis.asyncio as redis
-from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Security, status, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from database import init_db, AsyncSessionLocal, IncidentModel
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
+
+from rate_limit import (
+    public_rate_limit,
+    authenticated_rate_limit,
+    auth_route_rate_limit,
+)
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -45,12 +52,16 @@ CACHE_TTL_SECONDS: int = int(os.environ.get("CACHE_TTL", "300"))  # 5 min
 MAX_TOKENS: int = 512
 FAN_ROLE_SECRET: str = os.environ.get("FAN_ROLE_SECRET", "fan-secret")
 OPS_ROLE_SECRET: str = os.environ.get("OPS_ROLE_SECRET", "ops-secret")
+FRONTEND_URLS: str = os.environ.get(
+    "FRONTEND_URLS", "http://localhost:9999,http://localhost:5173"
+)
 
 # ── Gemini Initialisation ──────────────────────────────────────────────────────
-genai.configure(api_key=GEMINI_API_KEY)
-gemini_model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash",
-    generation_config={"max_output_tokens": MAX_TOKENS, "temperature": 0.4},
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+# We will use this model id in calls
+GEMINI_MODEL_ID = "gemini-2.0-flash"
+GEMINI_CONFIG = types.GenerateContentConfig(
+    max_output_tokens=MAX_TOKENS, temperature=0.4
 )
 
 # ── Redis Client (lazy singleton) ──────────────────────────────────────────────
@@ -61,7 +72,9 @@ async def get_redis() -> redis.Redis:
     """Return a shared async Redis connection pool."""
     global _redis_client
     if _redis_client is None:
-        _redis_client = redis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
+        _redis_client = redis.from_url(
+            REDIS_URL, encoding="utf-8", decode_responses=True
+        )
     return _redis_client
 
 
@@ -106,8 +119,11 @@ def require_operator(role: Annotated[UserRole, Depends(get_current_role)]) -> Us
 # ── PII Anonymisation ──────────────────────────────────────────────────────────
 # Patterns to strip before forwarding user text to the LLM.
 _PII_PATTERNS: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"\b\d{10,16}\b"), "[CARD_REDACTED]"),          # card / phone numbers
-    (re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I), "[EMAIL_REDACTED]"),
+    (re.compile(r"\b\d{10,16}\b"), "[CARD_REDACTED]"),  # card / phone numbers
+    (
+        re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I),
+        "[EMAIL_REDACTED]",
+    ),
     (re.compile(r"\b(?:\+?\d[\s\-]?){7,15}\b"), "[PHONE_REDACTED]"),
     (re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b"), "[IP_REDACTED]"),  # IP address
 ]
@@ -184,9 +200,17 @@ def _cache_key(text: str, language: str) -> str:
 class FanChatRequest(BaseModel):
     """Fan-facing chat query model with strict validation."""
 
-    message: str = Field(..., min_length=1, max_length=500, description="Fan's natural-language query")
-    language: str = Field(default="en", max_length=5, description="ISO 639-1 language code")
-    section: str | None = Field(default=None, max_length=20, description="Optional: fan's current section (e.g. '114')")
+    message: str = Field(
+        ..., min_length=1, max_length=500, description="Fan's natural-language query"
+    )
+    language: str = Field(
+        default="en", max_length=5, description="ISO 639-1 language code"
+    )
+    section: str | None = Field(
+        default=None,
+        max_length=20,
+        description="Optional: fan's current section (e.g. '114')",
+    )
 
     @field_validator("message")
     @classmethod
@@ -198,7 +222,26 @@ class FanChatRequest(BaseModel):
     @field_validator("language")
     @classmethod
     def valid_language(cls, v: str) -> str:
-        allowed = {"en","es","fr","de","pt","ar","zh","hi","ja","ko","it","nl","ru","pl","tr","sv","da","fi"}
+        allowed = {
+            "en",
+            "es",
+            "fr",
+            "de",
+            "pt",
+            "ar",
+            "zh",
+            "hi",
+            "ja",
+            "ko",
+            "it",
+            "nl",
+            "ru",
+            "pl",
+            "tr",
+            "sv",
+            "da",
+            "fi",
+        }
         if v not in allowed:
             return "en"
         return v
@@ -218,7 +261,9 @@ class FanChatResponse(BaseModel):
 class IncidentReportRequest(BaseModel):
     """Operations-only: report a new stadium incident."""
 
-    type: str = Field(..., description="Incident type: MEDICAL | SECURITY | MAINTENANCE | CROWD")
+    type: str = Field(
+        ..., description="Incident type: MEDICAL | SECURITY | MAINTENANCE | CROWD"
+    )
     sector: str = Field(..., max_length=10)
     gate: str | None = None
     severity: int = Field(..., ge=1, le=5, description="1 = low, 5 = critical")
@@ -263,32 +308,89 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Lock down to your frontend domain in production
+    allow_origins=[url.strip() for url in FRONTEND_URLS.split(",") if url.strip()],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
 
 # ── Request Logging Middleware ─────────────────────────────────────────────────
+@app.on_event("startup")
+async def on_startup():
+    await init_db()
+    logger.info("Database initialized.")
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    pass
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start = time.monotonic()
     response = await call_next(request)
     duration_ms = int((time.monotonic() - start) * 1000)
-    logger.info("%s %s → %d (%dms)", request.method, request.url.path, response.status_code, duration_ms)
+    logger.info(
+        "%s %s → %d (%dms)",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
     return response
 
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                pass
+
+
+ws_manager = ConnectionManager()
+
+@app.websocket("/ws/telemetry")
+async def websocket_telemetry(websocket: WebSocket):
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # We just keep connection alive, frontend doesn't need to send anything
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+
+
 # ── Health Check ──────────────────────────────────────────────────────────────
-@app.get("/health", tags=["System"])
+@app.get("/health", tags=["System"], dependencies=[Depends(public_rate_limit)])
 async def health_check() -> dict[str, Any]:
     """Kubernetes-ready liveness probe."""
-    return {"status": "ok", "service": "crowdos", "timestamp": datetime.utcnow().isoformat()}
+    return {
+        "status": "ok",
+        "service": "crowdos",
+        "timestamp": datetime.utcnow().isoformat(),
+    }
 
 
 # ── Fan AI Chat Endpoint ───────────────────────────────────────────────────────
-@app.post("/api/fan/chat", response_model=FanChatResponse, tags=["Fan"])
+@app.post(
+    "/api/fan/chat",
+    response_model=FanChatResponse,
+    tags=["Fan"],
+    dependencies=[Depends(public_rate_limit)],
+)
 async def fan_chat(
     body: FanChatRequest,
     redis_client: Annotated[redis.Redis, Depends(get_redis)],
@@ -322,11 +424,17 @@ async def fan_chat(
     # 3. Build hardened prompt and call Gemini
     prompt = build_safe_fan_prompt(clean_message, body.language)
     try:
-        response = await gemini_model.generate_content_async(prompt)
-        answer = response.text.strip()
+        response = await gemini_client.aio.models.generate_content(
+            model=GEMINI_MODEL_ID,
+            contents=prompt,
+            config=GEMINI_CONFIG,
+        )
+        answer = (response.text or "").strip()
     except Exception as exc:
         logger.error("Gemini call failed: %s", exc)
-        raise HTTPException(status_code=503, detail="AI service temporarily unavailable.")
+        raise HTTPException(
+            status_code=503, detail="AI service temporarily unavailable."
+        )
 
     # 4. Cache the response
     await redis_client.setex(key, CACHE_TTL_SECONDS, answer)
@@ -340,11 +448,16 @@ async def fan_chat(
     )
 
 
-# ── Operations: Incident Reporting ───────────────────────────────────────────
-@app.post("/api/ops/incident", response_model=IncidentReportResponse, tags=["Operations"])
+# ── Operator Incident Reporting Endpoint ───────────────────────────────────────
+@app.post(
+    "/api/ops/incident",
+    response_model=IncidentReportResponse,
+    tags=["Operations"],
+    dependencies=[Depends(authenticated_rate_limit)],
+)
 async def report_incident(
     body: IncidentReportRequest,
-    _role: Annotated[UserRole, Depends(require_operator)],
+    role: Annotated[UserRole, Depends(require_operator)],
 ) -> IncidentReportResponse:
     """
     Operations-only endpoint to report and AI-triage a stadium incident.
@@ -358,17 +471,53 @@ Generate a concise, numbered action plan (max 6 steps) aligned with FIFA stadium
 Format each step as a plain sentence starting with an action verb."""
 
     try:
-        response = await gemini_model.generate_content_async(prompt)
-        steps_text = response.text.strip()
-        steps = [s.strip() for s in re.split(r"\n\d+\.", steps_text) if s.strip()]
+        response = await gemini_client.aio.models.generate_content(
+            model=GEMINI_MODEL_ID,
+            contents=prompt,
+            config=GEMINI_CONFIG,
+        )
+        raw_text = (response.text or "").strip()
+        steps = [s.strip() for s in re.split(r"\n\d+\.", raw_text) if s.strip()]
     except Exception:
-        steps = ["Dispatch nearest response team immediately.", "Secure the affected area.", "Notify shift supervisor."]
+        steps = [
+            "Dispatch nearest response team immediately.",
+            "Secure the affected area.",
+            "Notify shift supervisor.",
+        ]
 
     notified: list[str] = ["Security Control", "Medical Team Alpha"]
     if body.type == "MEDICAL":
         notified.append("EMS Unit Med-2")
     elif body.type == "CROWD":
         notified.append("Crowd Management Unit")
+
+    # 5. Save to database
+    async with AsyncSessionLocal() as session:
+        new_incident = IncidentModel(
+            incident_id=incident_id,
+            type=body.type,
+            sector=body.sector,
+            severity=body.severity,
+            description=body.description,
+            reporter_id=body.reporter_id,
+            ai_action_plan=steps,
+            estimated_response_time_seconds=300,
+            notified_teams=notified,
+            status="active",
+        )
+        session.add(new_incident)
+        await session.commit()
+
+    # Broadcast via websocket
+    await ws_manager.broadcast({
+        "type": "NEW_INCIDENT",
+        "data": {
+            "incident_id": incident_id,
+            "type": body.type,
+            "sector": body.sector,
+            "severity": body.severity,
+        }
+    })
 
     return IncidentReportResponse(
         incident_id=incident_id,
@@ -379,12 +528,14 @@ Format each step as a plain sentence starting with an action verb."""
 
 
 # ── Fan / Ops: Navigation ─────────────────────────────────────────────────────
-@app.post("/api/fan/navigate", response_model=NavigationResponse, tags=["Fan", "Navigation"])
-async def navigate(body: NavigationRequest) -> NavigationResponse:
-    """
-    Real-time crowd navigation endpoint. Returns an AI-computed route with
-    congestion warnings pulled from live sensor data (stubbed here).
-    """
+@app.post(
+    "/api/fan/navigate",
+    response_model=NavigationResponse,
+    tags=["Fan"],
+    dependencies=[Depends(public_rate_limit)],
+)
+async def fan_navigation(body: NavigationRequest) -> NavigationResponse:
+    """Mock endpoint for crowd navigation."""
     # In production: query real-time sensor graph for shortest clear path
     route = [
         f"Exit Section {body.from_section} via main concourse",
@@ -392,11 +543,33 @@ async def navigate(body: NavigationRequest) -> NavigationResponse:
         f"Follow blue floor markers to {body.to_destination}",
     ]
     if body.accessibility_required:
-        route = [f"Use accessible lift at Section {body.from_section} ground floor"] + route[1:]
+        route = [
+            f"Use accessible lift at Section {body.from_section} ground floor"
+        ] + route[1:]
 
     return NavigationResponse(
         route=route,
         estimated_walk_time_minutes=4.5,
         congestion_warnings=["Gate 7 North Entry — wait > 15 min. Use Gate 8 instead."],
-        accessible_alternative="Accessible route via Corridor B-East available." if body.accessibility_required else None,
+        accessible_alternative=(
+            "Accessible route via Corridor B-East available."
+            if body.accessibility_required
+            else None
+        ),
     )
+
+
+# ── Auth Mock Endpoint ─────────────────────────────────────────────────────────
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+@app.post(
+    "/api/auth/login", tags=["Auth"], dependencies=[Depends(auth_route_rate_limit)]
+)
+async def login(body: LoginRequest) -> dict[str, str]:
+    """Stub authentication endpoint to demonstrate strict, exponentially-backoff rate limiting."""
+    if body.password == "wrong":
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return {"token": "mock-token-xyz"}
