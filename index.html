@@ -13,11 +13,11 @@
 <body class="h-screen flex">
 
 <!-- SIDEBAR -->
-<aside class="flex flex-col h-screen w-64 shrink-0 bg-surface-container-low border-r border-outline-variant sticky top-0 z-50">
+<aside class="flex flex-col h-screen w-64 shrink-0 bg-surface-container-low border-r border-outline-variant sticky top-0 z-50" aria-label="CrowdOS sidebar">
   <div class="p-gutter border-b border-outline-variant/40">
     <div class="flex items-center gap-stack-md">
       <div class="w-9 h-9 rounded-lg bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
-        <span class="material-symbols-outlined text-on-primary text-lg" style="font-variation-settings:'FILL' 1">stadium</span>
+        <span class="material-symbols-outlined text-on-primary text-lg" style="font-variation-settings:'FILL' 1" aria-hidden="true">stadium</span>
       </div>
       <div>
         <h1 class="text-sm font-bold text-on-surface uppercase tracking-wider">CrowdOS</h1>
@@ -30,42 +30,42 @@
     <div><p class="text-[9px] text-on-surface-variant uppercase">Incidents</p><p class="font-mono-data text-error text-[11px]">3 ACTIVE</p></div>
     <div><p class="text-[9px] text-on-surface-variant uppercase">Staff</p><p class="font-mono-data text-tertiary text-[11px]">450</p></div>
   </div>
-  <nav class="flex-1 py-stack-md px-2 space-y-0.5">
-    <a href="#" class="nav-item active flex items-center gap-3 px-3 py-2 text-on-surface-variant text-sm hover:text-on-surface hover:bg-surface-container-high transition-colors rounded" data-tab="command">
-      <span class="material-symbols-outlined text-[20px]">dashboard</span><span>Command Center</span>
+  <nav class="flex-1 py-stack-md px-2 space-y-0.5" role="navigation" aria-label="Main navigation">
+    <a href="#" class="nav-item active flex items-center gap-3 px-3 py-2 text-on-surface-variant text-sm hover:text-on-surface hover:bg-surface-container-high transition-colors rounded" data-tab="command" aria-current="page" role="tab" aria-selected="true">
+      <span class="material-symbols-outlined text-[20px]" aria-hidden="true">dashboard</span><span>Command Center</span>
     </a>
-    <a href="#" class="nav-item flex items-center gap-3 px-3 py-2 text-on-surface-variant text-sm hover:text-on-surface hover:bg-surface-container-high transition-colors rounded" data-tab="incident">
-      <span class="material-symbols-outlined text-[20px]">warning</span><span>Incident Response</span>
-      <span class="ml-auto bg-error text-on-error text-[9px] font-bold px-1.5 py-0.5 rounded-full">3</span>
+    <a href="#" class="nav-item flex items-center gap-3 px-3 py-2 text-on-surface-variant text-sm hover:text-on-surface hover:bg-surface-container-high transition-colors rounded" data-tab="incident" role="tab" aria-selected="false">
+      <span class="material-symbols-outlined text-[20px]" aria-hidden="true">warning</span><span>Incident Response</span>
+      <span class="ml-auto bg-error text-on-error text-[9px] font-bold px-1.5 py-0.5 rounded-full" aria-label="3 active incidents">3</span>
     </a>
-    <a href="#" class="nav-item flex items-center gap-3 px-3 py-2 text-on-surface-variant text-sm hover:text-on-surface hover:bg-surface-container-high transition-colors rounded" data-tab="resource">
-      <span class="material-symbols-outlined text-[20px]">eco</span><span>Resource Hub</span>
+    <a href="#" class="nav-item flex items-center gap-3 px-3 py-2 text-on-surface-variant text-sm hover:text-on-surface hover:bg-surface-container-high transition-colors rounded" data-tab="resource" role="tab" aria-selected="false">
+      <span class="material-symbols-outlined text-[20px]" aria-hidden="true">eco</span><span>Resource Hub</span>
     </a>
-    <a href="#" class="nav-item flex items-center gap-3 px-3 py-2 text-on-surface-variant text-sm hover:text-on-surface hover:bg-surface-container-high transition-colors rounded" data-tab="fanai">
-      <span class="material-symbols-outlined text-[20px]">smart_toy</span><span>Fan AI Assistant</span>
-      <span class="ml-auto bg-primary/20 text-primary text-[9px] font-bold px-1.5 py-0.5 rounded-full border border-primary/30">AI</span>
+    <a href="#" class="nav-item flex items-center gap-3 px-3 py-2 text-on-surface-variant text-sm hover:text-on-surface hover:bg-surface-container-high transition-colors rounded" data-tab="fanai" role="tab" aria-selected="false">
+      <span class="material-symbols-outlined text-[20px]" aria-hidden="true">smart_toy</span><span>Fan AI Assistant</span>
+      <span class="ml-auto bg-primary/20 text-primary text-[9px] font-bold px-1.5 py-0.5 rounded-full border border-primary/30" aria-label="AI powered">AI</span>
     </a>
   </nav>
   <div class="border-t border-outline-variant/30 py-stack-md px-2 space-y-0.5">
-    <a href="#" class="flex items-center gap-3 px-3 py-2 text-on-surface-variant text-sm hover:text-on-surface hover:bg-surface-container-high transition-colors rounded">
-      <span class="material-symbols-outlined text-[18px]">analytics</span><span>Analytics</span>
+    <a href="#" class="flex items-center gap-3 px-3 py-2 text-on-surface-variant text-sm hover:text-on-surface hover:bg-surface-container-high transition-colors rounded" aria-label="Analytics">
+      <span class="material-symbols-outlined text-[18px]" aria-hidden="true">analytics</span><span>Analytics</span>
     </a>
-    <a href="#" class="flex items-center gap-3 px-3 py-2 text-on-surface-variant text-sm hover:text-on-surface hover:bg-surface-container-high transition-colors rounded">
-      <span class="material-symbols-outlined text-[18px]">settings</span><span>Settings</span>
+    <a href="#" class="flex items-center gap-3 px-3 py-2 text-on-surface-variant text-sm hover:text-on-surface hover:bg-surface-container-high transition-colors rounded" aria-label="Settings">
+      <span class="material-symbols-outlined text-[18px]" aria-hidden="true">settings</span><span>Settings</span>
     </a>
     <div class="flex items-center gap-3 px-3 py-3 mt-1">
-      <div class="w-9 h-9 rounded-full border-2 border-primary/40 bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold text-sm shrink-0">MV</div>
+      <div class="w-9 h-9 rounded-full border-2 border-primary/40 bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold text-sm shrink-0" aria-hidden="true">MV</div>
       <div class="overflow-hidden flex-1">
         <p class="text-xs font-bold text-on-surface truncate">Marcus Vance</p>
         <p class="text-[10px] text-on-surface-variant truncate uppercase tracking-tighter">Chief of Operations</p>
       </div>
-      <span class="w-2 h-2 rounded-full bg-green-400 live-dot shrink-0"></span>
+      <span class="w-2 h-2 rounded-full bg-green-400 live-dot shrink-0" role="status" aria-label="Online"></span>
     </div>
   </div>
 </aside>
 
 <!-- MAIN CONTENT -->
-<div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+<div class="flex-1 flex flex-col min-w-0 overflow-hidden" role="main" aria-label="CrowdOS main content">
 
   <!-- Global Top Bar -->
   <header class="flex justify-between items-center h-14 px-gutter sticky top-0 z-40 bg-surface/80 backdrop-blur-md border-b border-outline-variant shadow-sm shrink-0">
@@ -78,9 +78,9 @@
       </div>
     </div>
     <div class="flex items-center gap-3">
-      <div class="hidden md:flex items-center bg-surface-container-lowest border border-outline-variant px-3 py-1 rounded-full">
-        <span class="material-symbols-outlined text-on-surface-variant text-[18px]">search</span>
-        <input type="text" placeholder="Search systems…" class="bg-transparent border-none focus:ring-0 text-sm w-36 text-on-surface placeholder:text-on-surface-variant/50 ml-1">
+      <div class="hidden md:flex items-center bg-surface-container-lowest border border-outline-variant px-3 py-1 rounded-full" role="search">
+        <span class="material-symbols-outlined text-on-surface-variant text-[18px]" aria-hidden="true">search</span>
+        <input type="text" placeholder="Search systems…" class="bg-transparent border-none focus:ring-0 text-sm w-36 text-on-surface placeholder:text-on-surface-variant/50 ml-1" aria-label="Search CrowdOS systems">
       </div>
       <span class="material-symbols-outlined text-on-surface-variant hover:text-primary cursor-pointer text-[20px]" role="button" tabindex="0" aria-label="Notifications">notifications</span>
       <span class="material-symbols-outlined text-error cursor-pointer text-[20px]" style="font-variation-settings:'FILL' 1" role="button" tabindex="0" aria-label="Emergency Home">emergency_home</span>
@@ -89,10 +89,10 @@
   </header>
 
   <!-- TAB 1: COMMAND CENTER -->
-  <div class="tab-pane active" id="tab-command">
+  <div class="tab-pane active" id="tab-command" role="tabpanel" aria-label="Command Center panel">
     <div class="flex-1 flex overflow-hidden p-gutter gap-gutter min-h-0">
       <!-- Stadium Map — Full SVG Pitch -->
-      <section class="flex-[3] relative bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/40" id="map-section">
+      <section class="flex-[3] relative bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/40" id="map-section" aria-label="Live stadium pitch and crowd map">
 
         <!-- Top bar: title + live KPIs -->
         <div class="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-2 bg-surface-container-low/80 backdrop-blur border-b border-outline-variant/30">
@@ -130,7 +130,7 @@
             </div>
 
             <!-- THE PITCH SVG — FIFA standard proportions (105m × 68m → viewport 700×450) -->
-            <svg id="pitch-svg" viewBox="0 0 700 450" class="relative z-10 drop-shadow-2xl" style="max-width:88%;max-height:82%;width:100%;height:100%">
+            <svg id="pitch-svg" viewBox="0 0 700 450" class="relative z-10 drop-shadow-2xl" style="max-width:88%;max-height:82%;width:100%;height:100%" role="img" aria-label="Live pitch telemetry showing player positions and ball movement">
               <defs>
                 <!-- Pitch turf gradient -->
                 <linearGradient id="turf" x1="0" y1="0" x2="0" y2="1">
@@ -424,15 +424,15 @@
   </div>
 
   <!-- TAB 2: INCIDENT RESPONSE -->
-  <div class="tab-pane" id="tab-incident">
+  <div class="tab-pane" id="tab-incident" role="tabpanel" aria-label="Incident Response panel" aria-live="polite">
     <div class="flex justify-between items-center px-gutter py-2 bg-error/10 border-b border-error/20 shrink-0">
       <div class="flex items-center gap-3 text-error text-sm font-semibold">
-        <span class="material-symbols-outlined animate-pulse" style="font-variation-settings:'FILL' 1">emergency</span>
-        Medical Alert: Sector 42 · Gate 4
+        <span class="material-symbols-outlined animate-pulse" style="font-variation-settings:'FILL' 1" aria-hidden="true">emergency</span>
+        <span>Medical Alert: Sector 42 · Gate 4</span>
       </div>
       <div class="flex items-center gap-2 text-error text-xs">
         <span class="uppercase tracking-wide font-semibold">Elapsed:</span>
-        <span class="font-mono-data" id="elapsed-timer">00:04:32</span>
+        <span class="font-mono-data" id="elapsed-timer" aria-label="Elapsed response time" aria-live="polite">00:04:32</span>
       </div>
     </div>
     <div class="flex-1 p-gutter overflow-hidden flex gap-gutter min-h-0">
@@ -441,7 +441,7 @@
           <!-- Map -->
           <div class="col-span-8 glass-panel rounded-xl overflow-hidden relative flex flex-col border border-outline-variant">
             <div class="px-4 py-2 border-b border-outline-variant flex justify-between items-center bg-surface-container/30 shrink-0">
-              <h3 class="text-sm font-semibold flex items-center gap-2"><span class="material-symbols-outlined text-primary">map</span>Location Map — Sector 42</h3>
+              <h3 class="text-sm font-semibold flex items-center gap-2"><span class="material-symbols-outlined text-primary" aria-hidden="true">map</span>Location Map — Sector 42</h3>
               <span class="bg-primary/10 text-primary text-[11px] px-2 py-0.5 rounded font-mono-data">51.5074°N, 0.1278°W</span>
             </div>
             <div class="flex-1 relative bg-gradient-to-b from-surface-container-lowest to-[#0a0f18] overflow-hidden group flex items-center justify-center">
@@ -451,7 +451,7 @@
                 
                 <!-- Floorplan Grid (Glassmorphism base) -->
                 <div class="absolute inset-0 bg-primary/5 border border-primary/20 rounded-3xl shadow-[0_0_50px_rgba(173,198,255,0.05)] backdrop-blur-sm">
-                  <svg width="100%" height="100%" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+                  <svg width="100%" height="100%" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Isometric sector map showing incident zones and EMS route">
                     <defs>
                       <pattern id="iso-grid" width="40" height="40" patternUnits="userSpaceOnUse">
                         <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#adc6ff" stroke-width="1" stroke-opacity="0.15"/>
@@ -605,7 +605,7 @@
   </div>
 
   <!-- TAB 3: RESOURCE HUB -->
-  <div class="tab-pane" id="tab-resource">
+  <div class="tab-pane" id="tab-resource" role="tabpanel" aria-label="Resource Hub panel">
     <div class="flex-1 overflow-y-auto p-gutter space-y-gutter scrollbar-hidden">
       <div class="grid grid-cols-12 gap-gutter">
         <!-- Waste KPI -->
@@ -686,7 +686,7 @@
   </div>
 
   <!-- TAB 4: FAN AI ASSISTANT -->
-  <div class="tab-pane" id="tab-fanai">
+  <div class="tab-pane" id="tab-fanai" role="tabpanel" aria-label="Fan AI Assistant panel">
     <div class="flex-1 flex gap-gutter p-gutter overflow-hidden min-h-0">
       <!-- Left: Capability panel -->
       <aside class="flex flex-col gap-gutter shrink-0" style="width:220px">

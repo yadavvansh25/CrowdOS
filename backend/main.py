@@ -19,16 +19,27 @@ import logging
 import os
 import re
 import time
-from datetime import datetime
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Any
 
 from google import genai
 from google.genai import types
 import redis.asyncio as redis
-from fastapi import Depends, FastAPI, HTTPException, Request, Security, status, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
 from database import init_db, AsyncSessionLocal, IncidentModel
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+    Security,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 
@@ -255,7 +266,9 @@ class FanChatResponse(BaseModel):
     cache_hit: bool
     latency_ms: int
     model: str = "gemini-2.0-flash"
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 class IncidentReportRequest(BaseModel):
@@ -294,6 +307,16 @@ class NavigationResponse(BaseModel):
     accessible_alternative: str | None
 
 
+# ── Lifespan ──────────────────────────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # type: ignore[type-arg]
+    """Manage startup and shutdown events using the modern lifespan API."""
+    await init_db()
+    logger.info("CrowdOS database initialised.")
+    yield
+    logger.info("CrowdOS shutting down.")
+
+
 # ── FastAPI Application ────────────────────────────────────────────────────────
 app = FastAPI(
     title="CrowdOS API",
@@ -304,6 +327,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -311,24 +335,37 @@ app.add_middleware(
     allow_origins=[url.strip() for url in FRONTEND_URLS.split(",") if url.strip()],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 
-# ── Request Logging Middleware ─────────────────────────────────────────────────
-@app.on_event("startup")
-async def on_startup():
-    await init_db()
-    logger.info("Database initialized.")
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    pass
-
+# ── Security Headers Middleware ────────────────────────────────────────────────
 @app.middleware("http")
-async def log_requests(request: Request, call_next):
+async def add_security_headers(request: Request, call_next: Any) -> Response:
+    """Inject OWASP-recommended security headers on every response."""
+    response: Response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Strict-Transport-Security"] = (
+        "max-age=63072000; includeSubDomains; preload"
+    )
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws: wss:;"
+    )
+    return response
+
+
+# ── Request Logging Middleware ─────────────────────────────────────────────────
+@app.middleware("http")
+async def log_requests(request: Request, call_next: Any) -> Response:
+    """Log every HTTP request with method, path, status code, and latency."""
     start = time.monotonic()
-    response = await call_next(request)
+    response: Response = await call_next(request)
     duration_ms = int((time.monotonic() - start) * 1000)
     logger.info(
         "%s %s → %d (%dms)",
@@ -376,11 +413,11 @@ async def websocket_telemetry(websocket: WebSocket):
 # ── Health Check ──────────────────────────────────────────────────────────────
 @app.get("/health", tags=["System"], dependencies=[Depends(public_rate_limit)])
 async def health_check() -> dict[str, Any]:
-    """Kubernetes-ready liveness probe."""
+    """Kubernetes-ready liveness probe with UTC timestamp."""
     return {
         "status": "ok",
         "service": "crowdos",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -465,10 +502,39 @@ async def report_incident(
     """
     incident_id = f"INC-{int(time.time())}-{body.sector.upper()}"
 
-    prompt = f"""You are CrowdOS Ops AI. A {body.type} incident has been reported at Sector {body.sector}.
-Severity: {body.severity}/5. Description: {body.description}
-Generate a concise, numbered action plan (max 6 steps) aligned with FIFA stadium SOP.
-Format each step as a plain sentence starting with an action verb."""
+    severity_tier = (
+        "CRITICAL (Severity 5) — immediate life-safety threat; escalate to command"
+        if body.severity == 5
+        else "HIGH (Severity 4) — significant impact; deploy within 2 minutes"
+        if body.severity == 4
+        else "MEDIUM (Severity 3) — moderate risk; respond within 5 minutes"
+        if body.severity == 3
+        else "LOW (Severity 2) — limited impact; address within 15 minutes"
+        if body.severity == 2
+        else "MINIMAL (Severity 1) — informational; log and monitor"
+    )
+
+    prompt = f"""SYSTEM (immutable): You are CrowdOS Operations AI, an expert in FIFA World Cup 2026 \
+stadium Standard Operating Procedures (SOP) for Titan Stadium.
+
+INCIDENT REPORT:
+- Type: {body.type}
+- Sector: {body.sector}
+- Severity: {body.severity}/5 ({severity_tier})
+- Description: {body.description}
+- Reporter: {body.reporter_id}
+
+Generate a PRECISE, numbered SOP-aligned action plan (exactly 6 steps) for the first responder.
+
+Rules:
+1. Each step must begin with an imperative action verb (Dispatch, Secure, Notify, Evacuate, etc.).
+2. Steps must be in strict chronological/priority order.
+3. Include specific team names, communication channels, or equipment where relevant.
+4. Step 6 must always be a documentation/after-action review step.
+5. Tailor the plan to the incident type ({body.type}) and severity tier.
+6. Never include placeholders — be concrete and actionable.
+
+Output format: Plain numbered list, one step per line, no extra commentary."""
 
     try:
         response = await gemini_client.aio.models.generate_content(
@@ -480,16 +546,23 @@ Format each step as a plain sentence starting with an action verb."""
         steps = [s.strip() for s in re.split(r"\n\d+\.", raw_text) if s.strip()]
     except Exception:
         steps = [
-            "Dispatch nearest response team immediately.",
-            "Secure the affected area.",
-            "Notify shift supervisor.",
+            f"Dispatch nearest {body.type.lower()} response team to Sector {body.sector} immediately.",
+            "Establish a 10m safety perimeter and redirect bystander crowd flow.",
+            f"Notify shift supervisor via radio channel CH-{body.severity} with incident ID.",
+            "Coordinate with Medical Team Alpha and Security Control for joint response.",
+            "Document all actions and witness accounts at the scene in real time.",
+            "Submit full after-action report to Operations Command within 30 minutes of resolution.",
         ]
 
     notified: list[str] = ["Security Control", "Medical Team Alpha"]
     if body.type == "MEDICAL":
-        notified.append("EMS Unit Med-2")
+        notified.extend(["EMS Unit Med-2", "Stadium Medical Director"])
     elif body.type == "CROWD":
-        notified.append("Crowd Management Unit")
+        notified.extend(["Crowd Management Unit", "Gate Supervisors"])
+    elif body.type == "SECURITY":
+        notified.extend(["Local Law Enforcement Liaison", "Head of Security"])
+    elif body.type == "MAINTENANCE":
+        notified.extend(["Facilities Engineering Team", "Safety Officer"])
 
     # 5. Save to database
     async with AsyncSessionLocal() as session:
