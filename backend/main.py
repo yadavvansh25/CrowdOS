@@ -22,7 +22,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated, Any
+from typing import Annotated, Any, AsyncGenerator, Pattern
 
 from google import genai
 from google.genai import types
@@ -129,7 +129,7 @@ def require_operator(role: Annotated[UserRole, Depends(get_current_role)]) -> Us
 
 # ── PII Anonymisation ──────────────────────────────────────────────────────────
 # Patterns to strip before forwarding user text to the LLM.
-_PII_PATTERNS: list[tuple[re.Pattern, str]] = [
+_PII_PATTERNS: list[tuple[Pattern[str], str]] = [
     (re.compile(r"\b\d{10,16}\b"), "[CARD_REDACTED]"),  # card / phone numbers
     (
         re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I),
@@ -309,7 +309,7 @@ class NavigationResponse(BaseModel):
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 @asynccontextmanager
-async def lifespan(app: FastAPI):  # type: ignore[type-arg]
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage startup and shutdown events using the modern lifespan API."""
     await init_db()
     logger.info("CrowdOS database initialised.")
@@ -378,33 +378,40 @@ async def log_requests(request: Request, call_next: Any) -> Response:
 
 
 class ConnectionManager:
-    def __init__(self):
+    """Manages active WebSocket connections and broadcasts messages."""
+
+    def __init__(self) -> None:
         self.active_connections: list[WebSocket] = []
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket) -> None:
+        """Accept and register a new WebSocket connection."""
         await websocket.accept()
         self.active_connections.append(websocket)
 
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, websocket: WebSocket) -> None:
+        """Remove a disconnected WebSocket from the active pool."""
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
-    async def broadcast(self, message: dict):
+    async def broadcast(self, message: dict[str, Any]) -> None:
+        """Broadcast a JSON message to all active WebSocket clients."""
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
 
 
 ws_manager = ConnectionManager()
 
+
 @app.websocket("/ws/telemetry")
-async def websocket_telemetry(websocket: WebSocket):
+async def websocket_telemetry(websocket: WebSocket) -> None:
+    """WebSocket endpoint for real-time stadium telemetry broadcast."""
     await ws_manager.connect(websocket)
     try:
         while True:
-            # We just keep connection alive, frontend doesn't need to send anything
+            # Keep connection alive; client does not need to send data
             await websocket.receive_text()
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)
@@ -505,13 +512,19 @@ async def report_incident(
     severity_tier = (
         "CRITICAL (Severity 5) — immediate life-safety threat; escalate to command"
         if body.severity == 5
-        else "HIGH (Severity 4) — significant impact; deploy within 2 minutes"
-        if body.severity == 4
-        else "MEDIUM (Severity 3) — moderate risk; respond within 5 minutes"
-        if body.severity == 3
-        else "LOW (Severity 2) — limited impact; address within 15 minutes"
-        if body.severity == 2
-        else "MINIMAL (Severity 1) — informational; log and monitor"
+        else (
+            "HIGH (Severity 4) — significant impact; deploy within 2 minutes"
+            if body.severity == 4
+            else (
+                "MEDIUM (Severity 3) — moderate risk; respond within 5 minutes"
+                if body.severity == 3
+                else (
+                    "LOW (Severity 2) — limited impact; address within 15 minutes"
+                    if body.severity == 2
+                    else "MINIMAL (Severity 1) — informational; log and monitor"
+                )
+            )
+        )
     )
 
     prompt = f"""SYSTEM (immutable): You are CrowdOS Operations AI, an expert in FIFA World Cup 2026 \
@@ -582,15 +595,17 @@ Output format: Plain numbered list, one step per line, no extra commentary."""
         await session.commit()
 
     # Broadcast via websocket
-    await ws_manager.broadcast({
-        "type": "NEW_INCIDENT",
-        "data": {
-            "incident_id": incident_id,
-            "type": body.type,
-            "sector": body.sector,
-            "severity": body.severity,
+    await ws_manager.broadcast(
+        {
+            "type": "NEW_INCIDENT",
+            "data": {
+                "incident_id": incident_id,
+                "type": body.type,
+                "sector": body.sector,
+                "severity": body.severity,
+            },
         }
-    })
+    )
 
     return IncidentReportResponse(
         incident_id=incident_id,
